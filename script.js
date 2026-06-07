@@ -14,7 +14,7 @@ let coins = [];
 let powerups = [];
 
 // Animation State Engines
-let mixer;
+let mixer = null; // Initialized as null to prevent premature loop updates
 let animationsMap = {}; 
 let currentAction = null;
 
@@ -59,8 +59,12 @@ function init() {
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', onWindowResize);
-    document.getElementById('start-btn').addEventListener('click', startGame);
-    document.getElementById('restart-btn').addEventListener('click', resetGame);
+    
+    // Safety check to ensure DOM elements exist before binding actions
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+    if (startBtn) startBtn.addEventListener('click', startGame);
+    if (restartBtn) restartBtn.addEventListener('click', resetGame);
 
     animate();
 }
@@ -71,6 +75,7 @@ function buildAnimatedPlayer() {
 
     const loader = new THREE.GLTFLoader();
     
+    // Crucial: Added error handlers to help debug if GitHub throws a 404
     loader.load('player.glb', function(gltf) {
         const model = gltf.scene;
         model.scale.set(1.5, 1.5, 1.5);
@@ -86,36 +91,39 @@ function buildAnimatedPlayer() {
 
         player.add(model);
 
-        // --- SAFE ANIMATION SCANNER ---
-        mixer = new THREE.AnimationMixer(model);
+        // Set up the animation mixer after the model is fully ready
+        const localMixer = new THREE.AnimationMixer(model);
         
         gltf.animations.forEach((clip) => {
             const name = clip.name.toLowerCase();
             
             if (name.includes('run') || name.includes('walk') || name.includes('drive')) {
-                animationsMap['run'] = mixer.clipAction(clip);
+                animationsMap['run'] = localMixer.clipAction(clip);
             }
             if (name.includes('jump') || name.includes('up')) {
-                animationsMap['jump'] = mixer.clipAction(clip);
+                animationsMap['jump'] = localMixer.clipAction(clip);
             }
             if (name.includes('slide') || name.includes('crouch') || name.includes('roll') || name.includes('duck')) {
-                animationsMap['slide'] = mixer.clipAction(clip);
+                animationsMap['slide'] = localMixer.clipAction(clip);
             }
             if (name.includes('idle') || name.includes('stand')) {
-                animationsMap['idle'] = mixer.clipAction(clip);
+                animationsMap['idle'] = localMixer.clipAction(clip);
             }
         });
 
-        // Fallbacks
-        if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = mixer.clipAction(gltf.animations[0]);
+        // Fallbacks if animations are named unexpectedly
+        if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = localMixer.clipAction(gltf.animations[0]);
         if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
         if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
         if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
 
+        // Assign the active mixer globally once all setup passes safely
+        mixer = localMixer;
+
         fadeToAnimation('idle');
 
     }, undefined, function(error) {
-        console.error("Critical Asset Error: Player model file loading issue.", error);
+        console.error("Critical Asset Error: Could not find or load player.glb.", error);
     });
 
     player.position.set(LANES[currentLane], 0, 0);
@@ -265,14 +273,14 @@ function triggerModelSlide() {
     crouchTimer = 25; 
     currentCollisionHeight = PLAYER_CROUCH_HEIGHT;
     
-    if(player.children[0]) player.children[0].position.y = -0.4;
+    if(player && player.children[0]) player.children[0].position.y = -0.4;
     fadeToAnimation('slide');
 }
 
 function resetModelSlide() {
     isCrouching = false;
     currentCollisionHeight = PLAYER_STAND_HEIGHT;
-    if(player.children[0]) player.children[0].position.y = 0; 
+    if(player && player.children[0]) player.children[0].position.y = 0; 
     
     if (gameState === "PLAYING" && !isJumping && activePowerup !== 'JETPACK') {
         fadeToAnimation('run');
@@ -286,10 +294,11 @@ function animate() {
     const delta = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
+    // Safety fix: Only update if the mixer has loaded successfully
     if (mixer) mixer.update(delta);
 
     if (gameState === "PLAYING") {
-        player.position.x += (LANES[currentLane] - player.position.x) * 0.24;
+        if (player) player.position.x += (LANES[currentLane] - player.position.x) * 0.24;
 
         if (isCrouching) {
             crouchTimer--;
@@ -298,7 +307,8 @@ function animate() {
 
         if (activePowerup) {
             powerupTimer -= delta;
-            document.getElementById('powerup-time').innerText = Math.max(0, Math.ceil(powerupTimer));
+            const timerEl = document.getElementById('powerup-time');
+            if (timerEl) timerEl.innerText = Math.max(0, Math.ceil(powerupTimer));
             if (powerupTimer <= 0) {
                 activePowerup = null;
                 document.getElementById('powerup-status').classList.add('hidden');
@@ -313,7 +323,7 @@ function animate() {
         } else {
             obstacles.forEach(obs => {
                 if (obs.userData.type === 'train') {
-                    if (Math.abs(player.position.x - obs.position.x) < 0.8) {
+                    if (player && Math.abs(player.position.x - obs.position.x) < 0.8) {
                         if (player.position.z < obs.position.z + 11 && player.position.z > obs.position.z - 11) {
                             if (player.position.y >= 3.2) groundFloorHeight = 3.6;
                         }
@@ -322,20 +332,22 @@ function animate() {
             });
         }
 
-        if (isJumping || player.position.y > groundFloorHeight) {
-            player.position.y += yVelocity;
-            yVelocity += GRAVITY;
+        if (player) {
+            if (isJumping || player.position.y > groundFloorHeight) {
+                player.position.y += yVelocity;
+                yVelocity += GRAVITY;
 
-            if (player.position.y <= groundFloorHeight) {
-                player.position.y = groundFloorHeight;
-                isJumping = false;
-                yVelocity = 0;
-                if (gameState === "PLAYING" && !isCrouching && activePowerup !== 'JETPACK') {
-                    fadeToAnimation('run');
+                if (player.position.y <= groundFloorHeight) {
+                    player.position.y = groundFloorHeight;
+                    isJumping = false;
+                    yVelocity = 0;
+                    if (gameState === "PLAYING" && !isCrouching && activePowerup !== 'JETPACK') {
+                        fadeToAnimation('run');
+                    }
                 }
+            } else if (!isCrouching) {
+                player.position.y += (groundFloorHeight - player.position.y) * 0.24;
             }
-        } else if (!isCrouching) {
-            player.position.y += (groundFloorHeight - player.position.y) * 0.24;
         }
 
         tracks.forEach(track => {
@@ -343,19 +355,21 @@ function animate() {
             if (track.position.z > 50) track.position.z -= 200;
         });
 
-        playerBox.min.set(player.position.x - 0.45, player.position.y, player.position.z - 0.4);
-        playerBox.max.set(player.position.x + 0.45, player.position.y + currentCollisionHeight, player.position.z + 0.4);
+        if (player && playerBox) {
+            playerBox.min.set(player.position.x - 0.45, player.position.y, player.position.z - 0.4);
+            playerBox.max.set(player.position.x + 0.45, player.position.y + currentCollisionHeight, player.position.z + 0.4);
+        }
 
         for (let i = obstacles.length - 1; i >= 0; i--) {
             let obs = obstacles[i];
             obs.position.z += (gameSpeed + (obs.userData.extraSpeed || 0));
             obs.userData.box.setFromObject(obs);
 
-            if (playerBox.intersectsBox(obs.userData.box)) {
+            if (playerBox && playerBox.intersectsBox(obs.userData.box)) {
                 if (activePowerup === 'JETPACK') continue;
                 if (obs.userData.type === 'barrier_crouch_only' && isCrouching) continue;
                 if (obs.userData.type === 'barrier_both' && (isCrouching || isJumping)) continue;
-                if (obs.userData.type === 'train' && player.position.y >= 3.5) continue;
+                if (player && obs.userData.type === 'train' && player.position.y >= 3.5) continue;
 
                 endGame();
             }
@@ -372,7 +386,7 @@ function animate() {
             pu.rotation.y += 0.05;
             pu.userData.box.setFromObject(pu);
 
-            if (playerBox.intersectsBox(pu.userData.box)) {
+            if (playerBox && playerBox.intersectsBox(pu.userData.box)) {
                 activePowerup = pu.userData.type;
                 powerupTimer = activePowerup === 'JETPACK' ? 5.0 : 8.0;
                 document.getElementById('powerup-name').innerText = activePowerup;
@@ -395,16 +409,18 @@ function animate() {
             coin.rotation.z += 0.05;
 
             if (activePowerup === 'MAGNET' && coin.position.z > -45) {
-                coin.position.x += (player.position.x - coin.position.x) * 0.25;
-                coin.position.y += (player.position.y + 1.0 - coin.position.y) * 0.25;
-                coin.position.z += (player.position.z - coin.position.z) * 0.25;
+                if (player) {
+                    coin.position.x += (player.position.x - coin.position.x) * 0.25;
+                    coin.position.y += (player.position.y + 1.0 - coin.position.y) * 0.25;
+                    coin.position.z += (player.position.z - coin.position.z) * 0.25;
+                }
             } else {
                 coin.position.z += gameSpeed;
             }
 
             coin.userData.box.setFromObject(coin);
 
-            if (playerBox.intersectsBox(coin.userData.box)) {
+            if (playerBox && playerBox.intersectsBox(coin.userData.box)) {
                 score += 20;
                 document.getElementById('score').innerText = score;
                 scene.remove(coin);
@@ -454,7 +470,7 @@ function resetGame() {
     powerupTimer = 0;
     isJumping = false;
     
-    player.position.set(LANES[currentLane], 0, 0);
+    if (player) player.position.set(LANES[currentLane], 0, 0);
     resetModelSlide();
 
     document.getElementById('score').innerText = score;
@@ -471,7 +487,6 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Binds variables cleanly after document structure completes loading
 window.addEventListener('DOMContentLoaded', () => {
     init();
 });
