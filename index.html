@@ -3,20 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Cyber Surfer - Ultimate Edition</title>
+    <title>3D Cyber Surfer - Deluxe Edition</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div id="ui-container">
-        <div id="score-board">SCORE: <span id="score">0</span></div>
-        <div id="powerup-status" class="hidden">POWERUP: <span id="powerup-name">-</span> (<span id="powerup-time">0</span>s)</div>
+        <div id="intro-screen">
+            <div class="glitch-wrapper">
+                <h1 class="title">CYBER<br><span class="highlight">SURFER</span></h1>
+            </div>
+            <p class="subtitle">PROCEDURAL 3D RUNNER SYSTEM</p>
+            <div class="controls-guide">
+                <div><span>← / →</span> MOVE LANES</div>
+                <div><span>↑ / SPACE</span> JUMP UP</div>
+                <div><span>↓</span> SLIDE / CROUCH</div>
+            </div>
+            <button id="start-btn">TAP TO RUN</button>
+        </div>
+
+        <div id="hud-panel" class="hidden">
+            <div id="score-board">SCORE: <span id="score">0</span></div>
+            <div id="powerup-status" class="hidden">ACTIVE: <span id="powerup-name">-</span> (<span id="powerup-time">0</span>s)</div>
+        </div>
         
         <div id="game-over-screen" class="hidden">
-            <h1>SYSTEM OVERRIDE</h1>
-            <p>CRITICAL ERROR: COLLISION DETECTED</p>
-            <p class="score-p">FINAL SCORE: <span id="final-score">0</span></p>
-            <button id="restart-btn">REBOOT SYSTEM</button>
+            <h1>SYSTEM CRASH</h1>
+            <p>CRITICAL HARDWARE IMPACT DETECTED</p>
+            <p class="score-p">DATA HARVESTED: <span id="final-score">0</span></p>
+            <button id="restart-btn">REBOOT ENGINES</button>
         </div>
     </div>
     <div id="game-canvas"></div>
