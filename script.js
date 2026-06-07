@@ -1,11 +1,11 @@
 // Game Core States
 const LANES = [-3, 0, 3];
 let currentLane = 1;
-let gameState = "INTRO"; // "INTRO", "PLAYING", "GAMEOVER"
+let gameState = "INTRO"; 
 let score = 0;
 let gameSpeed = 0.55;
 
-// Three.js Framework Variables
+// Three.js Core Setup Variables
 let scene, camera, renderer;
 let player, playerBox;
 let tracks = [];
@@ -13,12 +13,12 @@ let obstacles = [];
 let coins = [];
 let powerups = [];
 
-// Animation Handles for Kenney GLB Models
+// Animation State Engines
 let mixer;
-let animationsMap = {}; // Holds references to 'run', 'jump', 'slide', 'idle'
+let animationsMap = {}; 
 let currentAction = null;
 
-// Movement States
+// Player Physics Configurations
 let isJumping = false;
 let isCrouching = false;
 let yVelocity = 0;
@@ -30,13 +30,11 @@ let activePowerup = null;
 let powerupTimer = 0;
 let lastFrameTime = Date.now();
 
-// Fixed collision height based on model specs
 const PLAYER_STAND_HEIGHT = 1.8;
-const PLAYER_CROUCH_HEIGHT = 0.8;
+const PLAYER_CROUCH_HEIGHT = 0.7; 
 let currentCollisionHeight = PLAYER_STAND_HEIGHT;
 
 function init() {
-    // 1. Setup Scene & Visual Environment
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x06040a);
     scene.fog = new THREE.FogExp2(0x06040a, 0.01);
@@ -50,28 +48,23 @@ function init() {
     renderer.shadowMap.enabled = true;
     document.getElementById('game-canvas').appendChild(renderer.domElement);
 
-    // 2. Lighting Configuration
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
     mainLight.position.set(10, 30, 15);
     mainLight.castShadow = true;
     scene.add(mainLight);
 
-    // 3. Initialize Assets
     buildAnimatedPlayer();
     buildEnvironment();
 
-    // 4. Hook Event Listeners
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', onWindowResize);
     document.getElementById('start-btn').addEventListener('click', startGame);
     document.getElementById('restart-btn').addEventListener('click', resetGame);
 
-    // 5. Kickoff Master Loop
     animate();
 }
 
-// Loads the external model file and maps its internal bone animations
 function buildAnimatedPlayer() {
     player = new THREE.Group();
     playerBox = new THREE.Box3();
@@ -80,12 +73,8 @@ function buildAnimatedPlayer() {
     
     loader.load('player.glb', function(gltf) {
         const model = gltf.scene;
-        
-        // Adjust sizing to fit perfectly on the 3D grid tracks
         model.scale.set(1.5, 1.5, 1.5);
         model.position.y = 0;
-        
-        // Face forward toward the screen pathways
         model.rotation.y = Math.PI; 
         
         model.traverse((child) => {
@@ -97,32 +86,42 @@ function buildAnimatedPlayer() {
 
         player.add(model);
 
-        // Map Animations included in Kenney's GLTF packs
+        // --- SAFE ANIMATION SCANNER ---
         mixer = new THREE.AnimationMixer(model);
+        
         gltf.animations.forEach((clip) => {
             const name = clip.name.toLowerCase();
-            // Map common action names found inside the file strings
-            if (name.includes('run') || name.includes('walk')) animationsMap['run'] = mixer.clipAction(clip);
-            if (name.includes('jump')) animationsMap['jump'] = mixer.clipAction(clip);
-            if (name.includes('slide') || name.includes('crouch')) animationsMap['slide'] = mixer.clipAction(clip);
-            if (name.includes('idle')) animationsMap['idle'] = mixer.clipAction(clip);
+            
+            if (name.includes('run') || name.includes('walk') || name.includes('drive')) {
+                animationsMap['run'] = mixer.clipAction(clip);
+            }
+            if (name.includes('jump') || name.includes('up')) {
+                animationsMap['jump'] = mixer.clipAction(clip);
+            }
+            if (name.includes('slide') || name.includes('crouch') || name.includes('roll') || name.includes('duck')) {
+                animationsMap['slide'] = mixer.clipAction(clip);
+            }
+            if (name.includes('idle') || name.includes('stand')) {
+                animationsMap['idle'] = mixer.clipAction(clip);
+            }
         });
 
-        // Fallback checks if specific strings differ across files
+        // Fallbacks
         if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = mixer.clipAction(gltf.animations[0]);
-        
-        // Fire up initial starting loop clip
+        if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
+        if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
+        if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
+
         fadeToAnimation('idle');
 
     }, undefined, function(error) {
-        console.error("Error loading asset file: Verify player.glb is in the same folder.", error);
+        console.error("Critical Asset Error: Player model file loading issue.", error);
     });
 
     player.position.set(LANES[currentLane], 0, 0);
     scene.add(player);
 }
 
-// Gracefully blends between bone animations without clipping jerky movements
 function fadeToAnimation(targetName) {
     if (!mixer || !animationsMap[targetName]) return;
     
@@ -130,10 +129,10 @@ function fadeToAnimation(targetName) {
     if (currentAction === targetAction) return;
 
     if (currentAction) {
-        currentAction.fadeOut(0.15);
+        currentAction.fadeOut(0.12);
     }
     
-    targetAction.reset().fadeIn(0.15).play();
+    targetAction.reset().fadeIn(0.12).play();
     currentAction = targetAction;
 }
 
@@ -160,7 +159,6 @@ function spawnTrack(zPos) {
     });
 }
 
-// Endless Runner Object Spawner
 let spawnTimer = 0;
 function manageSpawning() {
     spawnTimer++;
@@ -171,7 +169,6 @@ function manageSpawning() {
         const roll = Math.random();
 
         if (roll < 0.28) {
-            // 🚄 Subway Train Body
             const trainGroup = new THREE.Group();
             trainGroup.position.set(targetLane, 1.8, spawnZ);
             
@@ -189,17 +186,14 @@ function manageSpawning() {
             obstacles.push(trainGroup);
 
         } else if (roll >= 0.28 && roll < 0.55) {
-            // 🚧 The Three Obstacle Barrier Variations
             const barrierRoll = Math.random();
             let barrierMesh, bType;
 
             if (barrierRoll < 0.33) {
-                // 1. HIGH WALL: JUMP ONLY
                 barrierMesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 4.2, 0.4), new THREE.MeshStandardMaterial({ color: 0xe94560 }));
                 barrierMesh.position.set(targetLane, 2.1, spawnZ);
                 bType = 'barrier_jump_only';
             } else if (barrierRoll < 0.66) {
-                // 2. CRAWL BARRIER: CROUCH ONLY
                 barrierMesh = new THREE.Group();
                 const beam = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.4), new THREE.MeshStandardMaterial({ color: 0xfcaf45 }));
                 beam.position.y = 2.0; 
@@ -210,7 +204,6 @@ function manageSpawning() {
                 barrierMesh.position.set(targetLane, 0, spawnZ);
                 bType = 'barrier_crouch_only';
             } else {
-                // 3. LOW HURDLE: CAN JUMP OR CROUCH
                 barrierMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.4), new THREE.MeshStandardMaterial({ color: 0xff7e67 }));
                 barrierMesh.rotation.z = Math.PI / 2;
                 barrierMesh.position.set(targetLane, 0.8, spawnZ);
@@ -222,7 +215,6 @@ function manageSpawning() {
             obstacles.push(barrierMesh);
 
         } else if (roll >= 0.55 && roll < 0.64) {
-            // 💎 Powerups Modules
             const pType = Math.random() > 0.5 ? 'JETPACK' : 'MAGNET';
             const color = pType === 'JETPACK' ? 0x00fff5 : 0xff007f;
             const geo = pType === 'JETPACK' ? new THREE.OctahedronGeometry(0.4) : new THREE.SphereGeometry(0.3, 16, 16);
@@ -234,7 +226,6 @@ function manageSpawning() {
             powerups.push(pMesh);
 
         } else {
-            // 🪙 Target Pathway Coins
             const count = activePowerup === 'JETPACK' ? 1 : 3;
             const height = activePowerup === 'JETPACK' ? 7.2 : 1.1;
             
@@ -269,27 +260,28 @@ function handleKeyDown(event) {
     }
 }
 
-// Plays the model file's built-in sliding animation safely
 function triggerModelSlide() {
     isCrouching = true;
-    crouchTimer = 25; // Matches duration cycle
+    crouchTimer = 25; 
     currentCollisionHeight = PLAYER_CROUCH_HEIGHT;
+    
+    if(player.children[0]) player.children[0].position.y = -0.4;
     fadeToAnimation('slide');
 }
 
 function resetModelSlide() {
     isCrouching = false;
     currentCollisionHeight = PLAYER_STAND_HEIGHT;
+    if(player.children[0]) player.children[0].position.y = 0; 
+    
     if (gameState === "PLAYING" && !isJumping && activePowerup !== 'JETPACK') {
         fadeToAnimation('run');
     }
 }
 
-// Core Clock Animation Frame Runner
 function animate() {
     requestAnimationFrame(animate);
 
-    // Compute explicit frame delta to keep model rigs moving smoothly independent of frame drops
     const now = Date.now();
     const delta = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
@@ -304,7 +296,6 @@ function animate() {
             if (crouchTimer <= 0) resetModelSlide();
         }
 
-        // Active Powerup Lifespan Tracking Loops
         if (activePowerup) {
             powerupTimer -= delta;
             document.getElementById('powerup-time').innerText = Math.max(0, Math.ceil(powerupTimer));
@@ -315,7 +306,6 @@ function animate() {
             }
         }
 
-        // Vertical Axis Terrain Matrix Engine
         let groundFloorHeight = 0;
 
         if (activePowerup === 'JETPACK') {
@@ -332,7 +322,6 @@ function animate() {
             });
         }
 
-        // Apply Linear Gravity Velocity Vectors
         if (isJumping || player.position.y > groundFloorHeight) {
             player.position.y += yVelocity;
             yVelocity += GRAVITY;
@@ -349,17 +338,14 @@ function animate() {
             player.position.y += (groundFloorHeight - player.position.y) * 0.24;
         }
 
-        // Drive Infinite Pathway Treadmill Slices
         tracks.forEach(track => {
             track.position.z += gameSpeed;
             if (track.position.z > 50) track.position.z -= 200;
         });
 
-        // Frame update customized physical collision boundaries matching active posture state
         playerBox.min.set(player.position.x - 0.45, player.position.y, player.position.z - 0.4);
         playerBox.max.set(player.position.x + 0.45, player.position.y + currentCollisionHeight, player.position.z + 0.4);
 
-        // Process Obstacle Hazards Array Matrix
         for (let i = obstacles.length - 1; i >= 0; i--) {
             let obs = obstacles[i];
             obs.position.z += (gameSpeed + (obs.userData.extraSpeed || 0));
@@ -380,7 +366,6 @@ function animate() {
             }
         }
 
-        // Process Powerup Pickups Loops
         for (let i = powerups.length - 1; i >= 0; i--) {
             let pu = powerups[i];
             pu.position.z += gameSpeed;
@@ -393,7 +378,7 @@ function animate() {
                 document.getElementById('powerup-name').innerText = activePowerup;
                 document.getElementById('powerup-status').classList.remove('hidden');
                 
-                if (activePowerup === 'JETPACK') fadeToAnimation('idle'); // T-Pose / Hover look
+                if (activePowerup === 'JETPACK') fadeToAnimation('idle'); 
                 
                 scene.remove(pu);
                 powerups.splice(i, 1);
@@ -405,7 +390,6 @@ function animate() {
             }
         }
 
-        // Process Magnet Coins Physics Collection Loops
         for (let i = coins.length - 1; i >= 0; i--) {
             let coin = coins[i];
             coin.rotation.z += 0.05;
@@ -454,9 +438,7 @@ function endGame() {
     document.getElementById('game-over-screen').classList.remove('hidden');
 }
 
-// Fixes the restart system bugs completely
 function resetGame() {
-    // Clean objects completely from active scene render processing memory lists
     obstacles.forEach(o => scene.remove(o));
     coins.forEach(c => scene.remove(c));
     powerups.forEach(p => scene.remove(p));
@@ -465,7 +447,6 @@ function resetGame() {
     coins = []; 
     powerups = [];
     
-    // Metrics reset routines
     score = 0; 
     gameSpeed = 0.55; 
     currentLane = 1;
@@ -490,4 +471,7 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-init();
+// Binds variables cleanly after document structure completes loading
+window.addEventListener('DOMContentLoaded', () => {
+    init();
+});
