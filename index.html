@@ -3,18 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Subway Surfers Clone</title>
+    <title>3D Cyber Surfer - Ultimate Edition</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Include Three.js via CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div id="ui-container">
-        <div id="score-board">Score: <span id="score">0</span></div>
+        <div id="score-board">SCORE: <span id="score">0</span></div>
+        <div id="powerup-status" class="hidden">POWERUP: <span id="powerup-name">-</span> (<span id="powerup-time">0</span>s)</div>
+        
         <div id="game-over-screen" class="hidden">
-            <h1>Game Over</h1>
-            <p>Final Score: <span id="final-score">0</span></p>
-            <button id="restart-btn">Play Again</button>
+            <h1>SYSTEM OVERRIDE</h1>
+            <p>CRITICAL ERROR: COLLISION DETECTED</p>
+            <p class="score-p">FINAL SCORE: <span id="final-score">0</span></p>
+            <button id="restart-btn">REBOOT SYSTEM</button>
         </div>
     </div>
     <div id="game-canvas"></div>
