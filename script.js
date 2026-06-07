@@ -14,7 +14,7 @@ let coins = [];
 let powerups = [];
 
 // Animation State Engines
-let mixer = null; // Initialized as null to prevent premature loop updates
+let mixer = null; 
 let animationsMap = {}; 
 let currentAction = null;
 
@@ -48,8 +48,8 @@ function init() {
     renderer.shadowMap.enabled = true;
     document.getElementById('game-canvas').appendChild(renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const mainLight = new THREE.DirectionalLight(0xffffff, 0.9);
     mainLight.position.set(10, 30, 15);
     mainLight.castShadow = true;
     scene.add(mainLight);
@@ -60,7 +60,6 @@ function init() {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', onWindowResize);
     
-    // Safety check to ensure DOM elements exist before binding actions
     const startBtn = document.getElementById('start-btn');
     const restartBtn = document.getElementById('restart-btn');
     if (startBtn) startBtn.addEventListener('click', startGame);
@@ -70,17 +69,30 @@ function init() {
 }
 
 function buildAnimatedPlayer() {
+    // 1. Create a container group immediately so player isn't undefined
     player = new THREE.Group();
+    player.position.set(LANES[currentLane], 0, 0);
+    scene.add(player);
+
     playerBox = new THREE.Box3();
+
+    // 2. Add a temporary placeholder cube so the game runs safely while loading
+    const placeholderGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
+    const placeholderMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, visible: true });
+    const placeholderMesh = new THREE.Mesh(placeholderGeo, placeholderMat);
+    placeholderMesh.position.y = 0.8;
+    player.add(placeholderMesh);
 
     const loader = new THREE.GLTFLoader();
     
-    // Crucial: Added error handlers to help debug if GitHub throws a 404
     loader.load('player.glb', function(gltf) {
+        // Remove placeholder mesh now that the real model has arrived
+        player.remove(placeholderMesh);
+
         const model = gltf.scene;
         model.scale.set(1.5, 1.5, 1.5);
         model.position.y = 0;
-        model.rotation.y = Math.PI; 
+        model.rotation.y = Math.PI; // Face forward
         
         model.traverse((child) => {
             if (child.isMesh) {
@@ -91,12 +103,11 @@ function buildAnimatedPlayer() {
 
         player.add(model);
 
-        // Set up the animation mixer after the model is fully ready
+        // --- SCAN ANIMATIONS ---
         const localMixer = new THREE.AnimationMixer(model);
         
         gltf.animations.forEach((clip) => {
             const name = clip.name.toLowerCase();
-            
             if (name.includes('run') || name.includes('walk') || name.includes('drive')) {
                 animationsMap['run'] = localMixer.clipAction(clip);
             }
@@ -111,23 +122,24 @@ function buildAnimatedPlayer() {
             }
         });
 
-        // Fallbacks if animations are named unexpectedly
+        // Smart fallbacks
         if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = localMixer.clipAction(gltf.animations[0]);
         if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
         if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
         if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
 
-        // Assign the active mixer globally once all setup passes safely
+        // Assign global state safely at the end
         mixer = localMixer;
 
-        fadeToAnimation('idle');
+        if (gameState === "PLAYING") {
+            fadeToAnimation('run');
+        } else {
+            fadeToAnimation('idle');
+        }
 
     }, undefined, function(error) {
-        console.error("Critical Asset Error: Could not find or load player.glb.", error);
+        console.error("Asset Load Error: player.glb missing or named incorrectly inside your repository root folder.", error);
     });
-
-    player.position.set(LANES[currentLane], 0, 0);
-    scene.add(player);
 }
 
 function fadeToAnimation(targetName) {
@@ -294,7 +306,6 @@ function animate() {
     const delta = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
-    // Safety fix: Only update if the mixer has loaded successfully
     if (mixer) mixer.update(delta);
 
     if (gameState === "PLAYING") {
