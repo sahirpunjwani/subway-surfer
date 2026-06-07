@@ -1,21 +1,20 @@
-// Game Configuration
+// Game State Configuration
 const LANES = [-3, 0, 3];
 let currentLane = 1;
 let gameActive = true;
 let score = 0;
-let gameSpeed = 0.5;
+let gameSpeed = 0.55;
 
-// Three.js Core Variables
+// Three.js Scene Variables
 let scene, camera, renderer;
 let player, playerBox;
 let tracks = [];
 let obstacles = [];
 let coins = [];
+let powerups = [];
 
-// Robot Parts references for running animation
-let leftLeg, rightLeg;
-
-// Player State Mechanics
+// Player Mechanical Movement Handles
+let leftLeg, rightLeg, leftArm, rightArm, thrusterFire;
 let isJumping = false;
 let isCrouching = false;
 let yVelocity = 0;
@@ -23,41 +22,38 @@ let crouchTimer = 0;
 const GRAVITY = -0.016;
 const JUMP_FORCE = 0.38;
 
-// Configurable constants
-const PLAYER_STAND_HEIGHT = 1.8;
-const PLAYER_CROUCH_HEIGHT = 0.8;
+// Powerup Variables
+let activePowerup = null; // 'MAGNET' or 'JETPACK'
+let powerupTimer = 0;
 
-// Initialization
+// Collision Constants
+const PLAYER_STAND_HEIGHT = 2.1;
+const PLAYER_CROUCH_HEIGHT = 0.7;
+
 function init() {
+    // Scene setup with synthwave horizon fog
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a14);
-    scene.fog = new THREE.FogExp2(0x0a0a14, 0.012);
+    scene.background = new THREE.Color(0x040208);
+    scene.fog = new THREE.FogExp2(0x040208, 0.01);
 
     camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 6, 9);
-    camera.lookAt(0, 2, -4);
+    camera.position.set(0, 6.5, 9.5);
+    camera.lookAt(0, 2.5, -4);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     document.getElementById('game-canvas').appendChild(renderer.domElement);
 
-    // Dynamic Futuristic Neon Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
-    scene.add(ambientLight);
+    // Dynamic Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+    const mainLight = new THREE.DirectionalLight(0x88bbff, 1.0);
+    mainLight.position.set(20, 40, 20);
+    mainLight.castShadow = true;
+    scene.add(mainLight);
 
-    const dirLight = new THREE.DirectionalLight(0xddffff, 0.8);
-    dirLight.position.set(15, 30, 10);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
-
-    // Cyberpunk-esque accent lights
-    const pointLight = new THREE.PointLight(0x00ffcc, 1, 50);
-    pointLight.position.set(0, 5, -10);
-    scene.add(pointLight);
-
-    createPlayerRobot();
-    createEnvironment();
+    buildCyberPlayer();
+    buildEnvironment();
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', onWindowResize);
@@ -66,75 +62,88 @@ function init() {
     animate();
 }
 
-// Assemble a cool looking multi-mesh 3D Android Robot
-function createPlayerRobot() {
+// Procedural Mecha Robot Assembly 
+function buildCyberPlayer() {
     player = new THREE.Group();
 
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d5, roughness: 0.2, metalness: 0.8 });
+    // High-tech materials
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1f222a, roughness: 0.3, metalness: 0.8 });
+    const armorMat = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.2, metalness: 0.7 });
     const neonMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
-    const jointMat = new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 0.5 });
+    const boostMat = new THREE.MeshBasicMaterial({ color: 0xff3300 });
 
-    // Torso / Chest
-    const torsoGeo = new THREE.BoxGeometry(0.9, 1.0, 0.6);
-    const torso = new THREE.Mesh(torsoGeo, metalMat);
-    torso.position.y = 1.2;
-    torso.castShadow = true;
+    // Torso Frame
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 0.6), bodyMat);
+    torso.position.y = 1.3;
+    // Core Plate armor
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 0.2), armorMat);
+    chestPlate.position.set(0, 0.1, 0.25);
+    torso.add(chestPlate);
     player.add(torso);
 
-    // Glowing core
-    const coreGeo = new THREE.SphereGeometry(0.18, 16, 16);
-    const core = new THREE.Mesh(coreGeo, neonMat);
-    core.position.set(0, 1.3, 0.31);
-    player.add(core);
+    // Sleek Visor Helmet Head
+    const headGroup = new THREE.Group();
+    headGroup.position.y = 2.1;
+    const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), armorMat);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.1), neonMat);
+    visor.position.set(0, 0.05, 0.22);
+    headGroup.add(helmet, visor);
+    player.add(headGroup);
 
-    // Head
-    const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    const head = new THREE.Mesh(headGeo, metalMat);
-    head.position.y = 1.95;
-    player.add(head);
+    // Shoulder Pads & Arms
+    const shoulderGeo = new THREE.SphereGeometry(0.18, 8, 8);
+    const armGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.7);
+    armGeo.translate(0, -0.35, 0);
 
-    // Visor/Eyes
-    const visorGeo = new THREE.BoxGeometry(0.4, 0.1, 0.1);
-    const visor = new THREE.Mesh(visorGeo, neonMat);
-    visor.position.set(0, 2.0, 0.22);
-    player.add(visor);
+    leftArm = new THREE.Group(); leftArm.position.set(-0.55, 1.6, 0);
+    const lPad = new THREE.Mesh(shoulderGeo, armorMat); lPad.position.set(0,0,0);
+    const lLim = new THREE.Mesh(armGeo, bodyMat); leftArm.add(lPad, lLim);
 
-    // Legs
-    const legGeo = new THREE.CylinderGeometry(0.1, 0.08, 0.8, 8);
-    leftLeg = new THREE.Mesh(legGeo, jointMat);
-    leftLeg.position.set(-0.25, 0.4, 0);
-    rightLeg = new THREE.Mesh(legGeo, jointMat);
-    rightLeg.position.set(0.25, 0.4, 0);
+    rightArm = new THREE.Group(); rightArm.position.set(0.55, 1.6, 0);
+    const rPad = new THREE.Mesh(shoulderGeo, armorMat); rPad.position.set(0,0,0);
+    const rLim = new THREE.Mesh(armGeo, bodyMat); rightArm.add(rPad, rLim);
+    
+    player.add(leftArm, rightArm);
+
+    // Segmented Running Legs
+    const legGeo = new THREE.CylinderGeometry(0.1, 0.07, 0.8);
+    legGeo.translate(0, -0.4, 0);
+    
+    leftLeg = new THREE.Mesh(legGeo, bodyMat); leftLeg.position.set(-0.25, 0.8, 0);
+    rightLeg = new THREE.Mesh(legGeo, bodyMat); rightLeg.position.set(0.25, 0.8, 0);
     player.add(leftLeg, rightLeg);
+
+    // Thruster Boost fire on backpack
+    thrusterFire = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 8), boostMat);
+    thrusterFire.rotation.x = Math.PI;
+    thrusterFire.position.set(0, 1.0, -0.4);
+    thrusterFire.visible = false;
+    player.add(thrusterFire);
 
     player.position.set(LANES[currentLane], 0, 0);
     scene.add(player);
 
-    // Invisible Bounding Box wrapping the combined group
-    playerBox = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+    playerBox = new THREE.Box3();
 }
 
-function createEnvironment() {
+function buildEnvironment() {
     for (let i = 0; i < 4; i++) {
-        spawnTrackSection(i * -50);
+        spawnTrack(i * -50);
     }
 }
 
-function spawnTrackSection(zPos) {
-    const floorGeo = new THREE.PlaneGeometry(14, 50);
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x15151c, roughness: 0.8 });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
+function spawnTrack(zPos) {
+    // Dark metallic running bed
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 51), new THREE.MeshStandardMaterial({ color: 0x090810, roughness: 0.9 }));
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, 0, zPos);
+    floor.position.set(0, -0.02, zPos);
     floor.receiveShadow = true;
     scene.add(floor);
     tracks.push(floor);
 
-    // Cyber grid lines representing tracks
+    // Neon Cyber Grid Borders
     LANES.forEach(lane => {
-        const lineGeo = new THREE.PlaneGeometry(0.2, 50);
-        const lineMat = new THREE.MeshBasicMaterial({ color: 0x2d2d3a });
-        const line = new THREE.Mesh(lineGeo, lineMat);
+        const line = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 51), new THREE.MeshBasicMaterial({ color: 0x1d1a30 }));
         line.rotation.x = -Math.PI / 2;
         line.position.set(lane, 0.01, zPos);
         scene.add(line);
@@ -142,195 +151,234 @@ function spawnTrackSection(zPos) {
     });
 }
 
-// Spawning Logic (Hurdles, Crawl Barriers, and Faster Trains)
+// Continuous Spawn Matrix Manager
 let spawnTimer = 0;
 function manageSpawning() {
     spawnTimer++;
-    if (spawnTimer % 55 === 0) {
-        const randomLane = Math.floor(Math.random() * 3);
-        const spawnZ = -160;
+    if (spawnTimer % 45 === 0) {
+        const laneIdx = Math.floor(Math.random() * 3);
+        const targetLane = LANES[laneIdx];
+        const spawnZ = -180;
         const roll = Math.random();
 
-        if (roll < 0.35) {
-            // 🚄 TYPE 1: Train (Moves faster towards player, can walk on top)
-            const trainGeo = new THREE.BoxGeometry(2.2, 3.5, 18);
-            const trainMat = new THREE.MeshStandardMaterial({ color: 0xcc2233, metalness: 0.7, roughness: 0.3 });
-            const train = new THREE.Mesh(trainGeo, trainMat);
-            train.position.set(LANES[randomLane], 1.75, spawnZ);
-            train.castShadow = true;
+        if (roll < 0.28) {
+            // 🚄 Mag-Lev Train 
+            const trainGroup = new THREE.Group();
+            trainGroup.position.set(targetLane, 1.8, spawnZ);
             
-            // Add a Wedge Mesh on back of train serving as an intuitive ramp
-            const rampGeo = new THREE.BoxGeometry(2.2, 0.1, 4);
-            const rampMat = new THREE.MeshStandardMaterial({ color: 0x991122 });
-            const ramp = new THREE.Mesh(rampGeo, rampMat);
-            ramp.position.set(0, -1.6, 10); // Placed at rear end
-            ramp.rotation.x = 0.4; // Tilted downward
-            train.add(ramp);
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2.3, 3.6, 20), new THREE.MeshStandardMaterial({ color: 0x0f3460, metalness: 0.8, roughness: 0.2 }));
+            body.castShadow = true;
+            trainGroup.add(body);
 
-            // Give train faster offset movement properties
-            train.userData = { box: new THREE.Box3(), type: 'train', extraSpeed: 0.25 };
-            scene.add(train);
-            obstacles.push(train);
+            // Tech Windshield / Glowing Headlights
+            const lightGeo = new THREE.BoxGeometry(0.4, 0.2, 0.1);
+            const lightMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+            const lLight = new THREE.Mesh(lightGeo, lightMat); lLight.position.set(-0.7, -1.0, 10.01);
+            const rLight = new THREE.Mesh(lightGeo, lightMat); rLight.position.set(0.7, -1.0, 10.01);
+            trainGroup.add(lLight, rLight);
 
-        } else if (roll >= 0.35 && roll < 0.65) {
-            // 🚧 TYPE 2: Crawl Barrier (Must Crouch!)
-            const barrierGroup = new THREE.Group();
+            // Integrated Roof Ramp
+            const ramp = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.1, 4.5), new THREE.MeshStandardMaterial({ color: 0x16213e }));
+            ramp.position.set(0, -1.75, 12);
+            ramp.rotation.x = 0.42;
+            trainGroup.add(ramp);
+
+            trainGroup.userData = { box: new THREE.Box3(), type: 'train', extraSpeed: 0.25 };
+            scene.add(trainGroup);
+            obstacles.push(trainGroup);
+
+        } else if (roll >= 0.28 && roll < 0.55) {
+            // 🚧 Spawn Barriers (3 Archetypes)
+            const typeRoll = Math.random();
+            let barrierMesh, bType;
+
+            if (typeRoll < 0.33) {
+                // 1. HIGH WALL: JUMP ONLY
+                barrierMesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 4.5, 0.4), new THREE.MeshStandardMaterial({ color: 0xff2e63, roughness: 0.4 }));
+                barrierMesh.position.set(targetLane, 2.25, spawnZ);
+                bType = 'barrier_jump_only';
+            } else if (typeRoll < 0.66) {
+                // 2. CRAWL BARRIER: CROUCH ONLY
+                barrierMesh = new THREE.Group();
+                const beam = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.6, 0.4), new THREE.MeshStandardMaterial({ color: 0xeee333 }));
+                beam.position.y = 2.1; // Floating high gap under it
+                const sideL = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3), new THREE.MeshStandardMaterial({color: 0x222}));
+                sideL.position.set(-1.2, 1.5, 0);
+                const sideR = sideL.clone(); sideR.position.x = 1.2;
+                barrierMesh.add(beam, sideL, sideR);
+                barrierMesh.position.set(targetLane, 0, spawnZ);
+                bType = 'barrier_crouch_only';
+            } else {
+                // 3. HURDLE PIPE: BOTH CAN PASS
+                barrierMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 2.4), new THREE.MeshStandardMaterial({ color: 0xff9f43 }));
+                barrierMesh.rotation.z = Math.PI / 2;
+                barrierMesh.position.set(targetLane, 1.0, spawnZ); // Floating midway
+                bType = 'barrier_both';
+            }
+
+            barrierMesh.userData = { box: new THREE.Box3(), type: bType, extraSpeed: 0 };
+            scene.add(barrierMesh);
+            obstacles.push(barrierMesh);
+
+        } else if (roll >= 0.55 && roll < 0.65) {
+            // 💎 Spawn Powerups
+            const pRoll = Math.random();
+            const pType = pRoll > 0.5 ? 'JETPACK' : 'MAGNET';
+            const color = pType === 'JETPACK' ? 0x00f3ff : 0xff00ff;
+
+            let pGeo = pType === 'JETPACK' ? new THREE.OctahedronGeometry(0.45) : new THREE.SphereGeometry(0.35, 16, 16);
+            const pMesh = new THREE.Mesh(pGeo, new THREE.MeshStandardMaterial({ color: color, emissive: color, roughness: 0.1 }));
             
-            // Side supports
-            const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 3);
-            const poleMat = new THREE.MeshStandardMaterial({ color: 0x333 });
-            const leftP = new THREE.Mesh(poleGeo, poleMat); leftP.position.x = -1.2;
-            const rightP = new THREE.Mesh(poleGeo, poleMat); rightP.position.x = 1.2;
-            barrierGroup.add(leftP, rightP);
-
-            // Warning Bar block hung high up
-            const barGeo = new THREE.BoxGeometry(2.6, 0.7, 0.3);
-            // Caution yellow/black stripe texture look via basic colors
-            const barMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.6 });
-            const bar = new THREE.Mesh(barGeo, barMat);
-            bar.position.y = 2.0; // Suspended high
-            barrierGroup.add(bar);
-
-            barrierGroup.position.set(LANES[randomLane], 1.5, spawnZ);
-            barrierGroup.userData = { box: new THREE.Box3(), type: 'crawl_barrier', extraSpeed: 0 };
-            scene.add(barrierGroup);
-            obstacles.push(barrierGroup);
+            pMesh.position.set(targetLane, 1.4, spawnZ);
+            pMesh.userData = { box: new THREE.Box3(), type: pType };
+            scene.add(pMesh);
+            powerups.push(pMesh);
 
         } else {
-            // 🟡 TYPE 3: Grid Coins
-            const coinGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.15, 12);
-            const coinMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00aa77 });
-            const coin = new THREE.Mesh(coinGeo, coinMat);
-            coin.rotation.x = Math.PI / 2;
+            // 🪙 Spawn Coins (Line sequence formation)
+            const count = activePowerup === 'JETPACK' ? 1 : 3;
+            const height = activePowerup === 'JETPACK' ? 7.5 : 1.2;
             
-            // Scatter height randomly if on flat ground vs potential trains
-            const coinHeight = Math.random() > 0.5 ? 1.2 : 4.5;
-            coin.position.set(LANES[randomLane], coinHeight, spawnZ);
-            coin.userData = { box: new THREE.Box3(), type: 'coin' };
-            scene.add(coin);
-            coins.push(coin);
+            for (let k = 0; k < count; k++) {
+                const coin = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.35, 0.35, 0.12, 8),
+                    new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x004433, roughness: 0.2 })
+                );
+                coin.rotation.x = Math.PI / 2;
+                coin.position.set(targetLane, height, spawnZ - (k * 3.5));
+                coin.userData = { box: new THREE.Box3(), type: 'coin' };
+                scene.add(coin);
+                coins.push(coin);
+            }
         }
     }
 }
 
-// Input Controllers
 function handleKeyDown(event) {
     if (!gameActive) return;
 
-    if (event.key === 'ArrowLeft' && currentLane > 0) {
-        currentLane--;
-    }
-    if (event.key === 'ArrowRight' && currentLane < 2) {
-        currentLane++;
-    }
-    if ((event.key === 'ArrowUp' || event.key === ' ') && !isJumping && !isCrouching) {
+    if (event.key === 'ArrowLeft' && currentLane > 0) currentLane--;
+    if (event.key === 'ArrowRight' && currentLane < 2) currentLane++;
+    if ((event.key === 'ArrowUp' || event.key === ' ') && !isJumping && !isCrouching && activePowerup !== 'JETPACK') {
         isJumping = true;
         yVelocity = JUMP_FORCE;
+        thrusterFire.visible = true;
     }
-    if (event.key === 'ArrowDown' && !isJumping) {
+    if (event.key === 'ArrowDown' && !isJumping && activePowerup !== 'JETPACK') {
         triggerCrouch();
     }
 }
 
 function triggerCrouch() {
     isCrouching = true;
-    crouchTimer = 25; // Lasts for 25 frames
-    player.scale.y = 0.45; // Flatten robot visually 
-    player.position.y = 0; 
+    crouchTimer = 22;
+    player.scale.y = 0.35; // Squash down
+    leftArm.rotation.x = -Math.PI/3;
+    rightArm.rotation.x = -Math.PI/3;
 }
 
-// Game Loop calculations
+// Primary Loop Logic
 function animate() {
     requestAnimationFrame(animate);
 
     if (gameActive) {
-        // 1. Lane Leaping Physics
-        player.position.x += (LANES[currentLane] - player.position.x) * 0.22;
+        // 1. Lerp Lateral Movements
+        player.position.x += (LANES[currentLane] - player.position.x) * 0.24;
 
-        // 2. Robot Legs Walk Cycle Simulation
-        if (!isJumping && !isCrouching) {
-            const time = Date.now() * 0.008;
-            leftLeg.rotation.x = Math.sin(time) * 0.6;
-            rightLeg.rotation.x = -Math.sin(time) * 0.6;
-        } else {
-            leftLeg.rotation.x = 0;
-            rightLeg.rotation.x = 0;
+        // 2. Continuous Locomotion Swing Animation
+        const time = Date.now() * 0.009;
+        if (!isJumping && !isCrouching && activePowerup !== 'JETPACK') {
+            leftLeg.rotation.x = Math.sin(time) * 0.75;
+            rightLeg.rotation.x = -Math.sin(time) * 0.75;
+            leftArm.rotation.x = -Math.sin(time) * 0.5;
+            rightArm.rotation.x = Math.sin(time) * 0.5;
         }
 
-        // 3. Crouching Timers
+        // 3. Crouching Scaling Reset
         if (isCrouching) {
             crouchTimer--;
             if (crouchTimer <= 0) {
                 isCrouching = false;
-                player.scale.y = 1.0; // Restore full height scale
+                player.scale.y = 1.0;
+                leftArm.rotation.x = 0;
+                rightArm.rotation.x = 0;
             }
         }
 
-        // 4. Vertical Tracking & Gravity
-        let baseFloorLevel = 0;
+        // 4. Powerup State Engine Timers
+        if (activePowerup) {
+            powerupTimer -= 0.016; // Approx time delta per frame
+            document.getElementById('powerup-time').innerText = Math.max(0, Math.ceil(powerupTimer));
+            
+            if (powerupTimer <= 0) {
+                activePowerup = null;
+                thrusterFire.visible = false;
+                document.getElementById('powerup-status').classList.add('hidden');
+            }
+        }
 
-        // Scan underneath to determine if standing on top of a Train
-        obstacles.forEach(obs => {
-            if (obs.userData.type === 'train') {
-                // If player lane matches train lane, and player is inside train's longitudinal Z-spread
-                if (Math.abs(player.position.x - obs.position.x) < 1.0) {
-                    if (player.position.z < obs.position.z + 10 && player.position.z > obs.position.z - 10) {
-                        // Standing over roof line
-                        if (player.position.y >= 3.4) {
-                            baseFloorLevel = 3.5;
+        // 5. Vertical Terrain Logic (Default vs Jetpack Sky mode vs Train Roofs)
+        let targetFloor = 0;
+
+        if (activePowerup === 'JETPACK') {
+            targetFloor = 7.0; // Float above hazards safely
+            thrusterFire.visible = true;
+            thrusterFire.scale.setScalar(Math.sin(time * 2) * 0.3 + 1.0);
+        } else {
+            // Train roof collision checks
+            obstacles.forEach(obs => {
+                if (obs.userData.type === 'train') {
+                    if (Math.abs(player.position.x - obs.position.x) < 0.8) {
+                        if (player.position.z < obs.position.z + 11 && player.position.z > obs.position.z - 11) {
+                            if (player.position.y >= 3.3) targetFloor = 3.6;
                         }
                     }
                 }
-            }
-        });
+            });
+        }
 
-        if (isJumping || player.position.y > baseFloorLevel) {
+        // Apply Gravity Acceleration mechanics
+        if (isJumping || player.position.y > targetFloor) {
             player.position.y += yVelocity;
             yVelocity += GRAVITY;
 
-            if (player.position.y <= baseFloorLevel) {
-                player.position.y = baseFloorLevel;
+            if (player.position.y <= targetFloor) {
+                player.position.y = targetFloor;
                 isJumping = false;
                 yVelocity = 0;
+                if (activePowerup !== 'JETPACK') thrusterFire.visible = false;
             }
         } else if (!isCrouching) {
-            // Anchor default standing position 
-            player.position.y = baseFloorLevel;
+            player.position.y += (targetFloor - player.position.y) * 0.2;
         }
 
-        // 5. Shift Background Environment Loops
+        // 6. Handle Infinite Ground Treadmill Loops
         tracks.forEach(track => {
             track.position.z += gameSpeed;
             if (track.position.z > 50) track.position.z -= 200;
         });
 
-        // Compute localized dynamic bounding box sizes for the robot depending on posture
-        const dynamicHeight = isCrouching ? PLAYER_CROUCH_HEIGHT : PLAYER_STAND_HEIGHT;
-        playerBox.min.set(player.position.x - 0.45, player.position.y, player.position.z - 0.3);
-        playerBox.max.set(player.position.x + 0.45, player.position.y + dynamicHeight, player.position.z + 0.3);
+        // Frame update the precise bounding box of the player model
+        const currentHeight = isCrouching ? PLAYER_CROUCH_HEIGHT : PLAYER_STAND_HEIGHT;
+        playerBox.min.set(player.position.x - 0.45, player.position.y, player.position.z - 0.35);
+        playerBox.max.set(player.position.x + 0.45, player.position.y + currentHeight, player.position.z + 0.35);
 
-        // 6. Manage Hazard Collisions
+        // 7. Process Obstacles & Hazards Matrix
         for (let i = obstacles.length - 1; i >= 0; i--) {
             let obs = obstacles[i];
-            
-            // Active movement vectors (Trains move faster relative to ground speed)
             obs.position.z += (gameSpeed + (obs.userData.extraSpeed || 0));
             obs.userData.box.setFromObject(obs);
 
             if (playerBox.intersectsBox(obs.userData.box)) {
-                
-                // Fine-tune Exception logic for Crawl Barriers
-                if (obs.userData.type === 'crawl_barrier') {
-                    // If crouching, you safely slip right under the collision block
-                    if (isCrouching) {
-                        continue; 
-                    }
-                }
-                
-                // Exception logic for running along Train Rooves
-                if (obs.userData.type === 'train' && player.position.y >= 3.4) {
-                    continue; // Safe!
-                }
+                const type = obs.userData.type;
+
+                // Jetpack flies completely clean above any grounding crash
+                if (activePowerup === 'JETPACK') continue;
+
+                // Validate individual specific multi-barrier rulesets
+                if (type === 'barrier_crouch_only' && isCrouching) continue; 
+                if (type === 'barrier_both' && (isCrouching || isJumping)) continue;
+                if (type === 'train' && player.position.y >= 3.5) continue; // Safety bounds running on train roof
 
                 endGame();
             }
@@ -341,15 +389,50 @@ function animate() {
             }
         }
 
-        // 7. Coin Collection Loops
+        // 8. Process Powerup Drops Collection Loops
+        for (let i = powerups.length - 1; i >= 0; i--) {
+            let pu = powerups[i];
+            pu.position.z += gameSpeed;
+            pu.rotation.y += 0.04;
+            pu.userData.box.setFromObject(pu);
+
+            if (playerBox.intersectsBox(pu.userData.box)) {
+                activePowerup = pu.userData.type;
+                powerupTimer = activePowerup === 'JETPACK' ? 5.0 : 8.0;
+
+                document.getElementById('powerup-name').innerText = activePowerup;
+                document.getElementById('powerup-status').classList.remove('hidden');
+
+                scene.remove(pu);
+                powerups.splice(i, 1);
+                continue;
+            }
+
+            if (pu.position.z > 15) {
+                scene.remove(pu);
+                powerups.splice(i, 1);
+            }
+        }
+
+        // 9. Process Coins Vector & Magnet pulling physics
         for (let i = coins.length - 1; i >= 0; i--) {
             let coin = coins[i];
-            coin.position.z += gameSpeed;
-            coin.rotation.z += 0.06;
+            coin.rotation.z += 0.05;
+
+            // Magnet active pulling vector calculation
+            if (activePowerup === 'MAGNET' && coin.position.z > -40) {
+                // Accelerate coin vectors straight towards player core coordinates
+                coin.position.x += (player.position.x - coin.position.x) * 0.22;
+                coin.position.y += (player.position.y + 1.0 - coin.position.y) * 0.22;
+                coin.position.z += (player.position.z - coin.position.z) * 0.22;
+            } else {
+                coin.position.z += gameSpeed;
+            }
+
             coin.userData.box.setFromObject(coin);
 
             if (playerBox.intersectsBox(coin.userData.box)) {
-                score += 15;
+                score += 20;
                 document.getElementById('score').innerText = score;
                 scene.remove(coin);
                 coins.splice(i, 1);
@@ -363,7 +446,7 @@ function animate() {
         }
 
         manageSpawning();
-        gameSpeed += 0.00008; // Continuous mild speed ramp
+        gameSpeed += 0.00006;
     }
 
     renderer.render(scene, camera);
@@ -378,16 +461,17 @@ function endGame() {
 function resetGame() {
     obstacles.forEach(o => scene.remove(o));
     coins.forEach(c => scene.remove(c));
-    obstacles = [];
-    coins = [];
-    score = 0;
-    gameSpeed = 0.5;
-    currentLane = 1;
+    powerups.forEach(p => scene.remove(p));
+    obstacles = []; coins = []; powerups = [];
+    score = 0; gameSpeed = 0.55; currentLane = 1;
+    activePowerup = null; powerupTimer = 0;
+    
     player.position.set(LANES[currentLane], 0, 0);
     player.scale.y = 1.0;
-    isCrouching = false;
-    isJumping = false;
+    isCrouching = false; isJumping = false; thrusterFire.visible = false;
+    
     document.getElementById('score').innerText = score;
+    document.getElementById('powerup-status').classList.add('hidden');
     document.getElementById('game-over-screen').classList.add('hidden');
     gameActive = true;
 }
