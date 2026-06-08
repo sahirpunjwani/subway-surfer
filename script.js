@@ -13,10 +13,8 @@ let obstacles = [];
 let coins = [];
 let powerups = [];
 
-// Animation State Engines
-let mixer = null; 
-let animationsMap = {}; 
-let currentAction = null;
+// Procedural Mesh Component Trackers
+let leftLeg, rightLeg, leftArm, rightArm;
 
 // Player Physics Configurations
 let isJumping = false;
@@ -54,7 +52,7 @@ function init() {
     mainLight.castShadow = true;
     scene.add(mainLight);
 
-    buildAnimatedPlayer();
+    buildProceduralMecha();
     buildEnvironment();
 
     window.addEventListener('keydown', handleKeyDown);
@@ -68,107 +66,45 @@ function init() {
     animate();
 }
 
-function buildAnimatedPlayer() {
+function buildProceduralMecha() {
     player = new THREE.Group();
     player.position.set(LANES[currentLane], 0, 0);
     scene.add(player);
 
     playerBox = new THREE.Box3();
 
-    // UPGRADED PLAYER DESIGN: Made a cool segmented Neon Hover-Pod Character
-    const characterGroup = new THREE.Group();
-    characterGroup.name = "visualMesh";
+    // Visual Mesh Core Assembly Wrapper
+    const mechaMain = new THREE.Group();
+    mechaMain.name = "visualMesh";
 
-    const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.4, 16);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x11141a, roughness: 0.2, metalness: 0.8 });
-    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-    bodyMesh.position.y = 0.8;
-    bodyMesh.castShadow = true;
-    characterGroup.add(bodyMesh);
+    const ironMat = new THREE.MeshStandardMaterial({ color: 0x22252c, roughness: 0.3, metalness: 0.8 });
+    const chromeMat = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.1, metalness: 0.5 });
+    const neonCyan = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
 
-    // Glowing Visor Accent Line
-    const visorGeo = new THREE.BoxGeometry(0.6, 0.15, 0.2);
-    const visorMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
-    const visorMesh = new THREE.Mesh(visorGeo, visorMat);
-    visorMesh.position.set(0, 1.2, 0.35);
-    characterGroup.add(visorMesh);
+    // Torso Chassis
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.8, 0.5), ironMat);
+    torso.position.y = 1.1;
+    torso.castShadow = true;
+    mechaMain.add(torso);
 
-    player.add(characterGroup);
+    // Light Visor Helmet
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.44), chromeMat);
+    head.position.y = 1.65;
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.1), neonCyan);
+    visor.position.set(0, 1.7, 0.2);
+    mechaMain.add(head, visor);
 
-    const loader = new THREE.GLTFLoader();
-    
-    loader.load('./player.glb', function(gltf) {
-        // If an actual working GLTF file arrives, clear our fallback neon bot mesh container
-        player.remove(characterGroup);
+    // Joint Limbs Setup for active run swing calculations
+    const limbGeo = new THREE.CylinderGeometry(0.07, 0.05, 0.6);
+    limbGeo.translate(0, -0.3, 0);
 
-        const model = gltf.scene;
-        model.name = "visualMesh";
-        model.scale.set(1.5, 1.5, 1.5);
-        model.position.y = 0;
-        model.rotation.y = Math.PI; 
-        
-        model.traverse((child) => {
-            if (child.isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
-            }
-        });
+    leftArm = new THREE.Mesh(limbGeo, ironMat); leftArm.position.set(-0.48, 1.4, 0);
+    rightArm = new THREE.Mesh(limbGeo, ironMat); rightArm.position.set(0.48, 1.4, 0);
+    leftLeg = new THREE.Mesh(limbGeo, chromeMat); leftLeg.position.set(-0.22, 0.7, 0);
+    rightLeg = new THREE.Mesh(limbGeo, chromeMat); rightLeg.position.set(0.22, 0.7, 0);
 
-        player.add(model);
-
-        // --- SCAN ANIMATIONS ---
-        if (gltf.animations && gltf.animations.length > 0) {
-            const localMixer = new THREE.AnimationMixer(model);
-            
-            gltf.animations.forEach((clip) => {
-                if (!clip || !clip.name) return;
-                
-                const name = clip.name.toLowerCase();
-                if (name.includes('run') || name.includes('walk') || name.includes('drive')) {
-                    animationsMap['run'] = localMixer.clipAction(clip);
-                }
-                if (name.includes('jump') || name.includes('up')) {
-                    animationsMap['jump'] = localMixer.clipAction(clip);
-                }
-                if (name.includes('slide') || name.includes('crouch') || name.includes('roll') || name.includes('duck')) {
-                    animationsMap['slide'] = localMixer.clipAction(clip);
-                }
-                if (name.includes('idle') || name.includes('stand')) {
-                    animationsMap['idle'] = localMixer.clipAction(clip);
-                }
-            });
-
-            if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = localMixer.clipAction(gltf.animations[0]);
-            if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
-            if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
-            if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
-
-            mixer = localMixer;
-            
-            if (gameState === "PLAYING") {
-                fadeToAnimation('run');
-            } else {
-                fadeToAnimation('idle');
-            }
-        }
-
-    }, undefined, function(error) {
-        console.warn("Using high-fidelity procedurally rendered Neon Runner core.");
-    });
-}
-
-function fadeToAnimation(targetName) {
-    if (!mixer || !animationsMap[targetName]) return;
-    
-    const targetAction = animationsMap[targetName];
-    if (currentAction === targetAction) return;
-
-    if (currentAction) {
-        currentAction.fadeOut(0.12);
-    }
-    
-    targetAction.reset().fadeIn(0.12).play();
-    currentAction = targetAction;
+    mechaMain.add(leftArm, rightArm, leftLeg, rightLeg);
+    player.add(mechaMain);
 }
 
 function buildEnvironment() {
@@ -288,14 +224,12 @@ function handleKeyDown(event) {
     if ((event.key === 'ArrowUp' || event.key === ' ') && !isJumping && !isCrouching && activePowerup !== 'JETPACK') {
         isJumping = true;
         yVelocity = JUMP_FORCE;
-        fadeToAnimation('jump');
     }
     if (event.key === 'ArrowDown' && !isJumping && activePowerup !== 'JETPACK') {
         triggerModelSlide();
     }
 }
 
-// FIXED CROUCH MATH: Rotates/scales the visual container group instead of dropping position offsets under the pavement grids
 function triggerModelSlide() {
     isCrouching = true;
     crouchTimer = 25; 
@@ -303,10 +237,9 @@ function triggerModelSlide() {
     
     const visualMesh = player.getObjectByName("visualMesh");
     if (visualMesh) {
-        visualMesh.scale.y = 0.4; // Clean visual squash
-        visualMesh.position.y = 0.2; // Keeps base sitting cleanly on track surface
+        visualMesh.scale.y = 0.45; // Clean visual scale squash
+        visualMesh.position.y = 0.25; // Anchor base cleanly over road beds
     }
-    fadeToAnimation('slide');
 }
 
 function resetModelSlide() {
@@ -315,12 +248,8 @@ function resetModelSlide() {
     
     const visualMesh = player.getObjectByName("visualMesh");
     if (visualMesh) {
-        visualMesh.scale.y = 1.0; // Restores perfect standing height
+        visualMesh.scale.y = 1.0; 
         visualMesh.position.y = 0;
-    }
-    
-    if (gameState === "PLAYING" && !isJumping && activePowerup !== 'JETPACK') {
-        fadeToAnimation('run');
     }
 }
 
@@ -331,10 +260,24 @@ function animate() {
     const delta = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
-    if (mixer) mixer.update(delta);
+    const runTime = now * 0.009;
 
     if (gameState === "PLAYING") {
         if (player) player.position.x += (LANES[currentLane] - player.position.x) * 0.24;
+
+        // Procedural Running Leg Swing animation vector formulas
+        if (!isJumping && !isCrouching && activePowerup !== 'JETPACK') {
+            leftLeg.rotation.x = Math.sin(runTime) * 0.75;
+            rightLeg.rotation.x = -Math.sin(runTime) * 0.75;
+            leftArm.rotation.x = -Math.sin(runTime) * 0.5;
+            rightArm.rotation.x = Math.sin(runTime) * 0.5;
+        } else if (isJumping || activePowerup === 'JETPACK') {
+            leftLeg.rotation.x = -0.2; rightLeg.rotation.x = 0.2;
+            leftArm.rotation.x = 0.4; rightArm.rotation.x = -0.4;
+        } else if (isCrouching) {
+            leftLeg.rotation.x = -1.1; rightLeg.rotation.x = -1.1;
+            leftArm.rotation.x = -0.8; rightArm.rotation.x = -0.8;
+        }
 
         if (isCrouching) {
             crouchTimer--;
@@ -348,7 +291,6 @@ function animate() {
             if (powerupTimer <= 0) {
                 activePowerup = null;
                 document.getElementById('powerup-status').classList.add('hidden');
-                if (!isJumping && !isCrouching) fadeToAnimation('run');
             }
         }
 
@@ -377,9 +319,6 @@ function animate() {
                     player.position.y = groundFloorHeight;
                     isJumping = false;
                     yVelocity = 0;
-                    if (gameState === "PLAYING" && !isCrouching && activePowerup !== 'JETPACK') {
-                        fadeToAnimation('run');
-                    }
                 }
             } else if (!isCrouching) {
                 player.position.y += (groundFloorHeight - player.position.y) * 0.24;
@@ -427,9 +366,6 @@ function animate() {
                 powerupTimer = activePowerup === 'JETPACK' ? 5.0 : 8.0;
                 document.getElementById('powerup-name').innerText = activePowerup;
                 document.getElementById('powerup-status').classList.remove('hidden');
-                
-                if (activePowerup === 'JETPACK') fadeToAnimation('idle'); 
-                
                 scene.remove(pu);
                 powerups.splice(i, 1);
                 continue;
@@ -480,12 +416,10 @@ function startGame() {
     document.getElementById('intro-screen').classList.add('hidden');
     document.getElementById('hud-panel').classList.remove('hidden');
     gameState = "PLAYING";
-    fadeToAnimation('run');
 }
 
 function endGame() {
     gameState = "GAMEOVER";
-    fadeToAnimation('idle');
     document.getElementById('final-score').innerText = score;
     document.getElementById('game-over-screen').classList.remove('hidden');
 }
@@ -514,7 +448,6 @@ function resetGame() {
     document.getElementById('game-over-screen').classList.add('hidden');
     
     gameState = "PLAYING";
-    fadeToAnimation('run');
 }
 
 function onWindowResize() {
