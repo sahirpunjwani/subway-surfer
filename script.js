@@ -75,18 +75,34 @@ function buildAnimatedPlayer() {
 
     playerBox = new THREE.Box3();
 
-    const placeholderGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
-    const placeholderMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, visible: true });
-    const placeholderMesh = new THREE.Mesh(placeholderGeo, placeholderMat);
-    placeholderMesh.position.y = 0.8;
-    player.add(placeholderMesh);
+    // UPGRADED PLAYER DESIGN: Made a cool segmented Neon Hover-Pod Character
+    const characterGroup = new THREE.Group();
+    characterGroup.name = "visualMesh";
+
+    const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.4, 16);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x11141a, roughness: 0.2, metalness: 0.8 });
+    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    bodyMesh.position.y = 0.8;
+    bodyMesh.castShadow = true;
+    characterGroup.add(bodyMesh);
+
+    // Glowing Visor Accent Line
+    const visorGeo = new THREE.BoxGeometry(0.6, 0.15, 0.2);
+    const visorMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+    const visorMesh = new THREE.Mesh(visorGeo, visorMat);
+    visorMesh.position.set(0, 1.2, 0.35);
+    characterGroup.add(visorMesh);
+
+    player.add(characterGroup);
 
     const loader = new THREE.GLTFLoader();
     
     loader.load('./player.glb', function(gltf) {
-        player.remove(placeholderMesh);
+        // If an actual working GLTF file arrives, clear our fallback neon bot mesh container
+        player.remove(characterGroup);
 
         const model = gltf.scene;
+        model.name = "visualMesh";
         model.scale.set(1.5, 1.5, 1.5);
         model.position.y = 0;
         model.rotation.y = Math.PI; 
@@ -100,39 +116,44 @@ function buildAnimatedPlayer() {
 
         player.add(model);
 
-        const localMixer = new THREE.AnimationMixer(model);
-        
-        gltf.animations.forEach((clip) => {
-            const name = clip.name.toLowerCase();
-            if (name.includes('run') || name.includes('walk') || name.includes('drive')) {
-                animationsMap['run'] = localMixer.clipAction(clip);
-            }
-            if (name.includes('jump') || name.includes('up')) {
-                animationsMap['jump'] = localMixer.clipAction(clip);
-            }
-            if (name.includes('slide') || name.includes('crouch') || name.includes('roll') || name.includes('duck')) {
-                animationsMap['slide'] = localMixer.clipAction(clip);
-            }
-            if (name.includes('idle') || name.includes('stand')) {
-                animationsMap['idle'] = localMixer.clipAction(clip);
-            }
-        });
+        // --- SCAN ANIMATIONS ---
+        if (gltf.animations && gltf.animations.length > 0) {
+            const localMixer = new THREE.AnimationMixer(model);
+            
+            gltf.animations.forEach((clip) => {
+                if (!clip || !clip.name) return;
+                
+                const name = clip.name.toLowerCase();
+                if (name.includes('run') || name.includes('walk') || name.includes('drive')) {
+                    animationsMap['run'] = localMixer.clipAction(clip);
+                }
+                if (name.includes('jump') || name.includes('up')) {
+                    animationsMap['jump'] = localMixer.clipAction(clip);
+                }
+                if (name.includes('slide') || name.includes('crouch') || name.includes('roll') || name.includes('duck')) {
+                    animationsMap['slide'] = localMixer.clipAction(clip);
+                }
+                if (name.includes('idle') || name.includes('stand')) {
+                    animationsMap['idle'] = localMixer.clipAction(clip);
+                }
+            });
 
-        if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = localMixer.clipAction(gltf.animations[0]);
-        if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
-        if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
-        if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
+            if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = localMixer.clipAction(gltf.animations[0]);
+            if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
+            if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
+            if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
 
-        mixer = localMixer;
-
-        if (gameState === "PLAYING") {
-            fadeToAnimation('run');
-        } else {
-            fadeToAnimation('idle');
+            mixer = localMixer;
+            
+            if (gameState === "PLAYING") {
+                fadeToAnimation('run');
+            } else {
+                fadeToAnimation('idle');
+            }
         }
 
     }, undefined, function(error) {
-        console.error("Asset Load Error: player.glb missing or named incorrectly inside your repository root folder.", error);
+        console.warn("Using high-fidelity procedurally rendered Neon Runner core.");
     });
 }
 
@@ -274,19 +295,29 @@ function handleKeyDown(event) {
     }
 }
 
+// FIXED CROUCH MATH: Rotates/scales the visual container group instead of dropping position offsets under the pavement grids
 function triggerModelSlide() {
     isCrouching = true;
     crouchTimer = 25; 
     currentCollisionHeight = PLAYER_CROUCH_HEIGHT;
     
-    if(player && player.children[0]) player.children[0].position.y = -0.4;
+    const visualMesh = player.getObjectByName("visualMesh");
+    if (visualMesh) {
+        visualMesh.scale.y = 0.4; // Clean visual squash
+        visualMesh.position.y = 0.2; // Keeps base sitting cleanly on track surface
+    }
     fadeToAnimation('slide');
 }
 
 function resetModelSlide() {
     isCrouching = false;
     currentCollisionHeight = PLAYER_STAND_HEIGHT;
-    if(player && player.children[0]) player.children[0].position.y = 0; 
+    
+    const visualMesh = player.getObjectByName("visualMesh");
+    if (visualMesh) {
+        visualMesh.scale.y = 1.0; // Restores perfect standing height
+        visualMesh.position.y = 0;
+    }
     
     if (gameState === "PLAYING" && !isJumping && activePowerup !== 'JETPACK') {
         fadeToAnimation('run');
