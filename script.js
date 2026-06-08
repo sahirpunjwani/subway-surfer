@@ -69,14 +69,12 @@ function init() {
 }
 
 function buildAnimatedPlayer() {
-    // 1. Create a container group immediately so player isn't undefined
     player = new THREE.Group();
     player.position.set(LANES[currentLane], 0, 0);
     scene.add(player);
 
     playerBox = new THREE.Box3();
 
-    // 2. Add a temporary placeholder cube so the game runs safely while loading
     const placeholderGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
     const placeholderMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, visible: true });
     const placeholderMesh = new THREE.Mesh(placeholderGeo, placeholderMat);
@@ -85,14 +83,13 @@ function buildAnimatedPlayer() {
 
     const loader = new THREE.GLTFLoader();
     
-    loader.load('player.glb', function(gltf) {
-        // Remove placeholder mesh now that the real model has arrived
+    loader.load('./player.glb', function(gltf) {
         player.remove(placeholderMesh);
 
         const model = gltf.scene;
         model.scale.set(1.5, 1.5, 1.5);
         model.position.y = 0;
-        model.rotation.y = Math.PI; // Face forward
+        model.rotation.y = Math.PI; 
         
         model.traverse((child) => {
             if (child.isMesh) {
@@ -103,7 +100,6 @@ function buildAnimatedPlayer() {
 
         player.add(model);
 
-        // --- SCAN ANIMATIONS ---
         const localMixer = new THREE.AnimationMixer(model);
         
         gltf.animations.forEach((clip) => {
@@ -122,13 +118,11 @@ function buildAnimatedPlayer() {
             }
         });
 
-        // Smart fallbacks
         if (!animationsMap['run'] && gltf.animations[0]) animationsMap['run'] = localMixer.clipAction(gltf.animations[0]);
         if (!animationsMap['idle']) animationsMap['idle'] = animationsMap['run'];
         if (!animationsMap['jump']) animationsMap['jump'] = animationsMap['run'];
         if (!animationsMap['slide']) animationsMap['slide'] = animationsMap['idle'];
 
-        // Assign global state safely at the end
         mixer = localMixer;
 
         if (gameState === "PLAYING") {
